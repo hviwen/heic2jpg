@@ -1,0 +1,48 @@
+# Dependencies files
+node_modules/
+frontend/node_modules/
+backend/node_modules/
+
+# Build output files
+dist/
+frontend/dist/
+backend/dist/
+*.tsbuildinfo
+
+# Local assets files
+backend/uploads/
+backend/temp/
+
+# Environment files
+.env
+.env.local
+.env.*.local
+frontend/.env
+frontend/.env.local
+backend/.env
+backend/.env.local
+
+# Runtime data files
+backend/logs/
+backend/data/
+*.sqlite
+*.sqlite3
+*.db
+
+# Logs files
+*.log
+npm-debug.log*
+pnpm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Editor / OS files
+.DS_Store
+.idea/
+.vscode/
+
+# Misc files
+coverage/
+
+# Template files
+*.template
