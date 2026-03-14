@@ -36,6 +36,7 @@
     "@typescript-eslint/parser": "8.57.0",
     "@vitejs/plugin-vue": "6.0.5",
     "autoprefixer": "10.4.27",
+    "code-inspector-plugin": "^1.4.4",
     "eslint": "9.39.1",
     "eslint-plugin-vue": "10.8.0",
     "postcss": "8.5.8",

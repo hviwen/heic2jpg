@@ -1,8 +1,10 @@
 <script setup lang="ts">
 import { computed } from 'vue'
-import { NButton, NCard, NProgress, NTag } from 'naive-ui'
+import { NButton, NCard, NProgress, NTag, NTooltip, useMessage } from 'naive-ui'
+import { LinkIcon } from '@heroicons/vue/24/outline'
 import { useI18n } from 'vue-i18n'
 import type { FileStatus, FileTask } from '../../types'
+import { useConversionStore } from '../../stores/conversion'
 import { formatFileSize } from '../../utils/fileUtils'
 
 const props = defineProps<{
@@ -11,13 +13,9 @@ const props = defineProps<{
   showActions?: boolean
 }>()
 
-const emit = defineEmits<{
-  cancel: [taskId: string]
-  retry: [taskId: string]
-  remove: [taskId: string]
-}>()
-
+const conversionStore = useConversionStore()
 const { t } = useI18n()
+const message = useMessage()
 
 const statusConfig = computed(() => {
   const map: Record<FileStatus, { type: 'default' | 'info' | 'warning' | 'success' | 'error'; label: string }> = {
@@ -32,93 +30,168 @@ const statusConfig = computed(() => {
   return map[props.task.status]
 })
 
-const canDownload = computed(() => props.task.status === 'completed' && props.task.result?.url)
-const canCancel = computed(() => props.task.status === 'pending' || props.task.status === 'processing')
+const displayProgress = computed(() => {
+  if (props.task.status === 'uploading') {
+    return props.task.uploadProgress ?? props.task.progress
+  }
+
+  return props.task.progress
+})
+
+const canDownload = computed(() => props.task.status === 'completed' && !!props.task.result?.url)
+const canCopyLink = computed(() => props.task.status === 'completed' && !!props.task.copyableUrl)
+const canCancel = computed(() => props.task.status === 'pending')
 const canRetry = computed(() => props.task.status === 'failed' || props.task.status === 'cancelled')
-const canRemove = computed(() => props.task.status !== 'processing')
+const canRemove = computed(() => props.task.status !== 'processing' && props.task.status !== 'uploading')
 
 const processingTime = computed(() => {
   if (!props.task.startedAt) return '--'
 
   const endTime = props.task.completedAt || new Date()
-  const seconds = Math.round((endTime.getTime() - props.task.startedAt.getTime()) / 1000)
+  const seconds = Math.max(0, Math.round((endTime.getTime() - props.task.startedAt.getTime()) / 1000))
   if (seconds < 60) return `${seconds}s`
   return `${Math.floor(seconds / 60)}m ${seconds % 60}s`
 })
 
-const handleDownload = () => {
-  if (!canDownload.value || !props.task.result?.url) return
-  const anchor = document.createElement('a')
-  anchor.href = props.task.result.url
-  anchor.download = props.task.result.filename
-  document.body.appendChild(anchor)
-  anchor.click()
-  document.body.removeChild(anchor)
+const statusHint = computed(() => {
+  if (props.task.status === 'uploading') {
+    return `${t('common.uploading')} ${displayProgress.value}%`
+  }
+
+  if (props.task.status === 'processing') {
+    return `${t('common.processing')} ${displayProgress.value}%`
+  }
+
+  if (props.task.status === 'completed' && props.task.result?.size) {
+    return `${formatFileSize(props.task.result.size)}`
+  }
+
+  return processingTime.value
+})
+
+const handleDownload = async () => {
+  await conversionStore.downloadTask(props.task.id)
+}
+
+const handleCopyLink = async () => {
+  if (!props.task.copyableUrl) {
+    return
+  }
+
+  try {
+    await navigator.clipboard.writeText(props.task.copyableUrl)
+    message.success(t('common.copySuccess'))
+  } catch {
+    message.error(t('common.copyUnavailable'))
+  }
+}
+
+const handleRetry = () => {
+  conversionStore.retryTask(props.task.id)
+}
+
+const handleThumbnailLoad = () => {
+  if (props.task.thumbnailState !== 'ready' && props.task.thumbnailState !== 'error') {
+    conversionStore.setTaskThumbnailState(props.task.id, 'ready')
+  }
+}
+
+const handleThumbnailError = () => {
+  if (props.task.thumbnailState !== 'error') {
+    conversionStore.setTaskThumbnailState(props.task.id, 'error')
+  }
 }
 </script>
 
 <template>
   <NCard embedded :bordered="false" size="small" class="task-card">
-    <div class="space-y-4">
-      <div class="flex items-start justify-between gap-3">
-        <div class="min-w-0">
-          <div class="truncate text-sm font-semibold md:text-base">{{ task.originalName }}</div>
-          <div class="mt-2 flex flex-wrap items-center gap-2 text-xs text-[var(--studio-muted)]">
-            <NTag size="small" round :type="statusConfig.type" :bordered="false">{{ statusConfig.label }}</NTag>
-            <span>{{ formatFileSize(task.originalSize) }}</span>
-            <span v-if="task.result?.size">→ {{ formatFileSize(task.result.size) }}</span>
-            <span>{{ processingTime }}</span>
-          </div>
-        </div>
+    <div class="task-preview">
+      <img
+        v-if="task.thumbnailUrl"
+        :src="task.thumbnailUrl"
+        :alt="task.originalName"
+        class="task-preview__image"
+        @load="handleThumbnailLoad"
+        @error="handleThumbnailError"
+      />
+      <div v-else class="task-preview__empty">{{ task.originalName.slice(0, 1).toUpperCase() }}</div>
 
-        <div v-if="showActions !== false" class="flex flex-wrap justify-end gap-2">
-          <NButton v-if="canDownload" size="small" secondary type="success" @click="handleDownload">
-            {{ t('common.download') }}
-          </NButton>
-          <NButton v-if="canRetry" size="small" secondary type="warning" @click="emit('retry', task.id)">
-            {{ t('common.retry') }}
-          </NButton>
-          <NButton v-if="canCancel" size="small" secondary type="error" @click="emit('cancel', task.id)">
-            {{ t('common.cancel') }}
-          </NButton>
-          <NButton v-if="canRemove" size="small" quaternary @click="emit('remove', task.id)">
-            {{ t('common.remove') }}
-          </NButton>
-        </div>
+      <div v-if="task.status === 'uploading' || task.status === 'processing'" class="task-preview__overlay">
+        <div class="task-preview__overlay-label">{{ displayProgress }}%</div>
+      </div>
+    </div>
+
+    <div class="task-body">
+      <button
+        v-if="canRetry"
+        class="task-name task-name--interactive"
+        type="button"
+        :title="task.originalName"
+        @click="handleRetry"
+      >
+        {{ task.originalName }}
+      </button>
+      <div v-else class="task-name" :title="task.originalName">{{ task.originalName }}</div>
+
+      <div class="task-meta">
+        <NTag size="small" round :type="statusConfig.type" :bordered="false">{{ statusConfig.label }}</NTag>
+        <span class="task-meta__text">{{ statusHint }}</span>
+      </div>
+
+      <div class="task-size-row">
+        <span class="task-size-text">{{ formatFileSize(task.originalSize) }}</span>
+        <span v-if="task.result?.size" class="task-size-text">→ {{ formatFileSize(task.result.size) }}</span>
       </div>
 
       <NProgress
         v-if="task.status === 'processing' || task.status === 'uploading'"
         type="line"
-        :percentage="task.progress"
-        :indicator-placement="'inside'"
-        processing
-        :height="10"
+        :percentage="displayProgress"
+        :show-indicator="false"
+        :height="8"
         rail-color="color-mix(in srgb, var(--studio-muted) 18%, transparent)"
         color="var(--studio-accent)"
       />
 
-      <div v-if="task.error" class="rounded-2xl border border-[color:color-mix(in_srgb,var(--studio-danger)_30%,transparent)] bg-[color:color-mix(in_srgb,var(--studio-danger)_10%,transparent)] px-4 py-3 text-sm text-[var(--studio-danger)]">
-        {{ task.error }}
-      </div>
+      <div v-if="task.error" class="task-error" :title="task.error">{{ task.error }}</div>
 
-      <div v-if="showDetails || task.status === 'completed'" class="grid gap-3 text-xs text-[var(--studio-muted)] md:grid-cols-4">
-        <div>
-          <div class="metric-label">{{ t('common.original') }}</div>
-          <div class="metric-value">{{ formatFileSize(task.originalSize) }}</div>
-        </div>
-        <div v-if="task.result">
-          <div class="metric-label">{{ t('common.converted') }}</div>
-          <div class="metric-value">{{ formatFileSize(task.result.size) }}</div>
-        </div>
-        <div v-if="task.result?.width && task.result?.height">
-          <div class="metric-label">{{ t('common.size') }}</div>
-          <div class="metric-value">{{ task.result.width }} × {{ task.result.height }}</div>
-        </div>
-        <div v-if="task.result?.format">
-          <div class="metric-label">{{ t('common.format') }}</div>
-          <div class="metric-value">{{ task.result.format.toUpperCase() }}</div>
-        </div>
+      <div v-if="showActions !== false" class="task-actions">
+        <NButton v-if="canDownload" size="tiny" secondary type="success" @click="handleDownload">
+          {{ t('common.download') }}
+        </NButton>
+
+        <NButton v-if="canRetry" size="tiny" secondary type="warning" @click="handleRetry">
+          {{ t('common.retry') }}
+        </NButton>
+
+        <NTooltip v-if="task.status === 'completed' && !canCopyLink" trigger="hover">
+          <template #trigger>
+            <span class="task-action-disabled">
+              <NButton size="tiny" tertiary disabled>
+                <template #icon>
+                  <LinkIcon class="h-3.5 w-3.5" />
+                </template>
+                {{ t('common.copyLink') }}
+              </NButton>
+            </span>
+          </template>
+          {{ t('common.copyUnavailable') }}
+        </NTooltip>
+
+        <NButton v-else-if="canCopyLink" size="tiny" tertiary @click="handleCopyLink">
+          <template #icon>
+            <LinkIcon class="h-3.5 w-3.5" />
+          </template>
+          {{ t('common.copyLink') }}
+        </NButton>
+
+        <NButton v-if="canCancel" size="tiny" tertiary type="error" @click="conversionStore.cancelTask(task.id)">
+          {{ t('common.cancel') }}
+        </NButton>
+
+        <NButton v-if="canRemove" size="tiny" quaternary @click="conversionStore.removeFile(task.id)">
+          {{ t('common.remove') }}
+        </NButton>
       </div>
     </div>
   </NCard>
@@ -126,16 +199,164 @@ const handleDownload = () => {
 
 <style scoped>
 .task-card {
-  border-radius: 22px;
+  position: relative;
+  overflow: hidden;
+  border-radius: 24px;
   border: 1px solid var(--studio-line);
+  padding: 12px;
 }
 
-.metric-label {
-  margin-bottom: 6px;
+.task-card::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  padding: 1px;
+  border-radius: inherit;
+  background:
+    conic-gradient(
+      from 0deg,
+      transparent 0deg,
+      transparent 52deg,
+      color-mix(in srgb, var(--studio-accent) 78%, white) 96deg,
+      color-mix(in srgb, var(--studio-warm) 60%, white) 136deg,
+      transparent 176deg,
+      transparent 360deg
+    );
+  opacity: 0;
+  pointer-events: none;
+  -webkit-mask:
+    linear-gradient(#fff 0 0) content-box,
+    linear-gradient(#fff 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+  animation: task-card-glow-spin 2.6s linear infinite;
+  transition: opacity 220ms cubic-bezier(0.22, 1, 0.36, 1);
 }
 
-.metric-value {
-  color: var(--studio-ink);
+.task-card:hover::before,
+.task-card:focus-within::before {
+  opacity: 1;
+}
+
+.task-preview {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100px;
+  height: 100px;
+  margin: 0 auto;
+  overflow: hidden;
+  border-radius: 20px;
+  background:
+    radial-gradient(circle at top, color-mix(in srgb, var(--studio-accent) 16%, transparent), transparent 58%),
+    color-mix(in srgb, var(--studio-card) 88%, white 12%);
+  border: 1px solid color-mix(in srgb, var(--studio-line) 88%, transparent);
+}
+
+.task-preview__image {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.task-preview__empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 100%;
+  color: var(--studio-accent);
+  font-size: 28px;
+  font-weight: 800;
+}
+
+.task-preview__overlay {
+  position: absolute;
+  inset: auto 8px 8px;
+  padding: 4px 8px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--studio-paper) 82%, transparent);
+  backdrop-filter: blur(8px);
+}
+
+.task-preview__overlay-label {
+  white-space: nowrap;
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.task-body {
+  margin-top: 12px;
+  display: grid;
+  gap: 10px;
+}
+
+@keyframes task-card-glow-spin {
+  to {
+    transform: rotate(1turn);
+  }
+}
+
+.task-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 13px;
   font-weight: 700;
+  line-height: 1.4;
+}
+
+.task-name--interactive {
+  border: 0;
+  background: transparent;
+  padding: 0;
+  text-align: left;
+  color: var(--studio-danger);
+  cursor: pointer;
+}
+
+.task-meta,
+.task-size-row,
+.task-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.task-meta {
+  justify-content: space-between;
+}
+
+.task-meta__text,
+.task-size-text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--studio-muted);
+  font-size: 11px;
+}
+
+.task-size-row {
+  flex-wrap: nowrap;
+}
+
+.task-error {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--studio-danger);
+  font-size: 11px;
+}
+
+.task-actions {
+  flex-wrap: wrap;
+}
+
+.task-action-disabled {
+  display: inline-flex;
 }
 </style>

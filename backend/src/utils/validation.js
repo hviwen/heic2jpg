@@ -8,8 +8,8 @@ export function validateFile(file) {
     throw new Error('文件不能为空')
   }
 
-  // 检查文件大小（最大100MB）
-  const maxSize = 100 * 1024 * 1024 // 100MB
+  // 检查文件大小（最大30MB）
+  const maxSize = 30 * 1024 * 1024
   if (file.size > maxSize) {
     throw new Error(`文件大小不能超过 ${formatFileSize(maxSize)}`)
   }
@@ -96,7 +96,7 @@ export function validateBatchRequest(files, options) {
   }
 
   // 检查文件数量
-  const maxFiles = 50
+  const maxFiles = 80
   if (files.length > maxFiles) {
     throw new Error(`一次最多转换 ${maxFiles} 个文件`)
   }

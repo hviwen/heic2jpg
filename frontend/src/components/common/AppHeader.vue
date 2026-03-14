@@ -24,8 +24,7 @@ import {
   PlusIcon,
   QuestionMarkCircleIcon,
   SunIcon,
-  MoonIcon,
-  XMarkIcon
+  MoonIcon
 } from '@heroicons/vue/24/outline'
 import { useI18n } from 'vue-i18n'
 import { useThemeStore } from '../../stores/theme'
@@ -42,6 +41,7 @@ const authStore = useAuthStore()
 const preferencesStore = usePreferencesStore()
 
 const drawerVisible = ref(false)
+const logoUrl = '/assets/logo.svg'
 
 const navItems = computed(() => [
   { key: '/', label: t('nav.home'), icon: HomeIcon },
@@ -126,9 +126,7 @@ const iconForTheme = computed(() => {
       <div class="flex items-center justify-between gap-3 px-4 py-3 md:px-6">
         <button class="min-w-0 text-left" @click="navigateTo('/')">
           <div class="flex items-center gap-3">
-            <div class="header-mark studio-dot-grid">
-              <div class="header-mark__inner"></div>
-            </div>
+            <img :src="logoUrl" :alt="t('app.name')" class="header-logo" />
             <div class="min-w-0">
               <div class="studio-label">{{ t('home.eyebrow') }}</div>
               <div class="truncate text-base font-extrabold tracking-tight md:text-lg">
@@ -241,9 +239,7 @@ const iconForTheme = computed(() => {
       <NDrawerContent closable>
         <template #header>
           <div class="flex items-center gap-3">
-            <div class="header-mark header-mark--small">
-              <div class="header-mark__inner"></div>
-            </div>
+            <img :src="logoUrl" :alt="t('app.name')" class="header-logo header-logo--small" />
             <div>
               <div class="studio-label">{{ t('app.name') }}</div>
               <div class="text-sm text-[var(--studio-muted)]">{{ t('app.tagline') }}</div>
@@ -327,31 +323,16 @@ const iconForTheme = computed(() => {
   border-radius: 28px;
 }
 
-.header-mark {
-  display: flex;
-  height: 48px;
+.header-logo {
   width: 48px;
-  align-items: center;
-  justify-content: center;
-  border-radius: 16px;
-  border: 1px solid var(--studio-line);
-  background:
-    radial-gradient(circle at top right, rgba(178, 109, 51, 0.24), transparent 40%),
-    color-mix(in srgb, var(--studio-accent) 12%, var(--studio-card));
+  height: 48px;
+  flex-shrink: 0;
+  object-fit: contain;
 }
 
-.header-mark--small {
-  height: 40px;
+.header-logo--small {
   width: 40px;
-  border-radius: 14px;
-}
-
-.header-mark__inner {
-  height: 22px;
-  width: 22px;
-  border-radius: 999px;
-  background: linear-gradient(135deg, var(--studio-warm), var(--studio-accent));
-  box-shadow: 0 10px 20px rgba(45, 106, 79, 0.22);
+  height: 40px;
 }
 
 .nav-pill {

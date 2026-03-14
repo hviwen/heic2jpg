@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed } from 'vue'
-import { NCard, NProgress, NStatistic } from 'naive-ui'
+import { NCard, NProgress } from 'naive-ui'
 import { useI18n } from 'vue-i18n'
 import { useConversionStore } from '../../stores/conversion'
 import { formatFileSize } from '../../utils/fileUtils'
@@ -8,77 +8,51 @@ import { formatFileSize } from '../../utils/fileUtils'
 const conversionStore = useConversionStore()
 const { t } = useI18n()
 
-const compressionRatio = computed(() => {
-  if (conversionStore.totalConvertedSize === 0 || conversionStore.totalOriginalSize === 0) {
-    return 0
-  }
-
-  const ratio = (1 - conversionStore.totalConvertedSize / conversionStore.totalOriginalSize) * 100
-  return Math.max(0, Math.round(ratio * 10) / 10)
-})
-
-const successRate = computed(() => {
-  if (conversionStore.totalFiles === 0) {
-    return 100
-  }
-
-  return Math.round((conversionStore.completedFiles / conversionStore.totalFiles) * 100)
-})
-
-const metrics = computed(() => [
-  {
-    label: t('home.quickFacts.files'),
-    value: conversionStore.totalFiles
-  },
-  {
-    label: t('home.quickFacts.progress'),
-    value: `${conversionStore.totalProgress}%`
-  },
-  {
-    label: t('common.savedSpace'),
-    value:
-      conversionStore.totalConvertedSize > 0
-        ? formatFileSize(Math.max(conversionStore.totalOriginalSize - conversionStore.totalConvertedSize, 0))
-        : '--'
-  },
-  {
-    label: t('history.summarySuccess'),
-    value: `${successRate.value}%`
-  }
+const metricRows = computed(() => [
+  { label: t('home.quickFacts.files'), value: conversionStore.totalFiles },
+  { label: t('common.completed'), value: conversionStore.completedFiles },
+  { label: t('common.failed'), value: conversionStore.failedFiles },
+  { label: t('home.quickFacts.progress'), value: `${conversionStore.totalProgress}%` }
 ])
 </script>
 
 <template>
   <NCard embedded :bordered="false" class="studio-panel stats-card">
-    <div class="mb-5 flex items-center justify-between">
+    <div class="stats-header">
       <div>
         <div class="studio-label">{{ t('home.statsTitle') }}</div>
-        <h3 class="mt-2 text-xl font-bold">{{ t('home.queueSubtitle') }}</h3>
+        <h2 class="stats-title">{{ t('home.dashboardTitle') }}</h2>
       </div>
-      <div class="text-right text-sm text-[var(--studio-muted)]">
-        <div>{{ formatFileSize(conversionStore.totalOriginalSize) }}</div>
-        <div>→ {{ formatFileSize(conversionStore.totalConvertedSize) }}</div>
-      </div>
-    </div>
-
-    <div class="grid gap-4 md:grid-cols-2">
-      <div v-for="metric in metrics" :key="metric.label" class="metric-tile">
-        <div class="metric-tile__label">{{ metric.label }}</div>
-        <div class="metric-tile__value">{{ metric.value }}</div>
+      <div class="stats-total">
+        <div class="stats-total__value">{{ formatFileSize(conversionStore.totalOriginalSize) }}</div>
+        <div class="stats-total__label">{{ t('common.original') }}</div>
       </div>
     </div>
 
-    <div class="mt-6 grid gap-4 md:grid-cols-2">
-      <NStatistic :label="t('home.quickFacts.progress')" :value="conversionStore.totalProgress">
-        <template #suffix>%</template>
-      </NStatistic>
-      <NStatistic :label="t('common.compression')" :value="compressionRatio">
-        <template #suffix>%</template>
-      </NStatistic>
+    <div class="stats-grid">
+      <div v-for="metric in metricRows" :key="metric.label" class="stats-metric">
+        <div class="stats-metric__label">{{ metric.label }}</div>
+        <div class="stats-metric__value">{{ metric.value }}</div>
+      </div>
     </div>
 
-    <div class="mt-5">
+    <div class="stats-foot">
+      <div class="stats-foot__row">
+        <span>{{ t('common.savedSpace') }}</span>
+        <strong>
+          {{
+            conversionStore.totalConvertedSize > 0
+              ? formatFileSize(Math.max(conversionStore.totalOriginalSize - conversionStore.totalConvertedSize, 0))
+              : '--'
+          }}
+        </strong>
+      </div>
+      <div class="stats-foot__row">
+        <span>{{ t('common.converted') }}</span>
+        <strong>{{ formatFileSize(conversionStore.totalConvertedSize) }}</strong>
+      </div>
       <NProgress
+        class="stats-progress"
         type="line"
         :percentage="conversionStore.totalProgress"
         :show-indicator="false"
@@ -87,35 +61,102 @@ const metrics = computed(() => [
         rail-color="color-mix(in srgb, var(--studio-muted) 20%, transparent)"
         color="var(--studio-accent)"
       />
-      <div class="mt-2 flex justify-between text-xs text-[var(--studio-muted)]">
-        <span>{{ conversionStore.completedFiles }} {{ t('common.completed') }}</span>
-        <span>{{ conversionStore.failedFiles }} {{ t('common.failed') }}</span>
-      </div>
     </div>
   </NCard>
 </template>
 
 <style scoped>
 .stats-card {
-  border-radius: 28px;
+  border-radius: 32px;
+  padding: 22px;
 }
 
-.metric-tile {
-  border-radius: 22px;
-  border: 1px solid var(--studio-line);
-  background: color-mix(in srgb, var(--studio-card) 70%, transparent);
-  padding: 18px;
+.stats-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
 }
 
-.metric-tile__label {
-  font-size: 12px;
-  color: var(--studio-muted);
-}
-
-.metric-tile__value {
-  margin-top: 8px;
-  font-size: 28px;
+.stats-title {
+  margin: 10px 0 0;
+  font-size: 24px;
   font-weight: 800;
   letter-spacing: -0.04em;
+}
+
+.stats-total {
+  min-width: 0;
+  text-align: right;
+}
+
+.stats-total__value {
+  white-space: nowrap;
+  font-size: 20px;
+  font-weight: 800;
+}
+
+.stats-total__label {
+  margin-top: 6px;
+  color: var(--studio-muted);
+  font-size: 12px;
+}
+
+.stats-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  margin-top: 18px;
+}
+
+.stats-metric {
+  min-width: 0;
+  border-radius: 20px;
+  border: 1px solid var(--studio-line);
+  padding: 14px;
+}
+
+.stats-metric__label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--studio-muted);
+  font-size: 12px;
+}
+
+.stats-metric__value {
+  margin-top: 8px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 24px;
+  font-weight: 800;
+  letter-spacing: -0.04em;
+}
+
+.stats-foot {
+  display: grid;
+  gap: 10px;
+  margin-top: 18px;
+}
+
+.stats-foot__row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  color: var(--studio-muted);
+  font-size: 13px;
+}
+
+.stats-foot__row strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--studio-ink);
+}
+
+.stats-progress {
+  margin-top: 4px;
 }
 </style>

@@ -1,6 +1,7 @@
 import { ref } from 'vue'
 import type { ConversionOptions, BrowserConversionResult, OutputFormat } from '../types'
 import { createConversionWorker } from '../workers/conversion.worker'
+import { MAX_UPLOAD_FILE_SIZE } from '../constants/upload'
 
 type WorkerConversionOptions = {
   quality: number
@@ -38,7 +39,8 @@ export function useBrowserConverter() {
   // 转换单个文件
   const convert = async (
     file: File, 
-    options: ConversionOptions
+    options: ConversionOptions,
+    onProgress?: (progress: number) => void
   ): Promise<BrowserConversionResult> => {
     if (!isInitialized.value) {
       const initialized = await initialize()
@@ -60,13 +62,12 @@ export function useBrowserConverter() {
       }
 
       // 验证文件大小（浏览器端限制为50MB）
-      const maxSize = 50 * 1024 * 1024 // 50MB
-      if (file.size > maxSize) {
-        throw new Error(`文件大小超过限制 (最大 ${formatFileSize(maxSize)})`)
+      if (file.size > MAX_UPLOAD_FILE_SIZE) {
+        throw new Error(`文件大小超过限制 (最大 ${formatFileSize(MAX_UPLOAD_FILE_SIZE)})`)
       }
 
       // 使用Worker进行转换
-      return await convertWithWorker(file, options)
+      return await convertWithWorker(file, options, onProgress)
     } finally {
       isConverting.value = false
     }
@@ -75,7 +76,8 @@ export function useBrowserConverter() {
   // 使用Worker转换
   const convertWithWorker = (
     file: File, 
-    options: ConversionOptions
+    options: ConversionOptions,
+    onProgress?: (progress: number) => void
   ): Promise<BrowserConversionResult> => {
     return new Promise((resolve, reject) => {
       const conversionId = Date.now().toString(36) + Math.random().toString(36).substr(2, 5)
@@ -111,7 +113,7 @@ export function useBrowserConverter() {
         switch (type) {
           case 'progress':
             // 进度更新
-            console.log(`转换进度: ${data.progress}% (${file.name})`)
+            onProgress?.(data.progress)
             break
 
           case 'complete':

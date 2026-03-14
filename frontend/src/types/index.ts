@@ -26,7 +26,11 @@ export interface FileTask {
   originalType: string
   status: FileStatus
   progress: number
+  uploadProgress?: number
   error?: string
+  thumbnailUrl?: string
+  thumbnailState?: 'idle' | 'loading' | 'ready' | 'error'
+  copyableUrl?: string
   result?: {
     blob?: Blob
     url?: string
@@ -183,6 +187,7 @@ export interface UploadComponentProps {
   accept?: string[]
   maxSize?: number
   maxFiles?: number
+  currentCount?: number
   allowMultiple?: boolean
   allowFolder?: boolean
   disabled?: boolean

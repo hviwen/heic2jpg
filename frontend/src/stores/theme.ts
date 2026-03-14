@@ -59,7 +59,7 @@ export const useThemeStore = defineStore('theme', () => {
     }
 
     // 设置meta theme-color
-    const themeColor = theme === 'dark' ? '#0f172a' : '#ffffff'
+    const themeColor = theme === 'dark' ? '#111713' : '#edf2e7'
     let metaThemeColor = document.querySelector('meta[name="theme-color"]')
     
     if (!metaThemeColor) {

@@ -60,8 +60,8 @@ const upload = multer({
   storage,
   fileFilter,
   limits: {
-    fileSize: 100 * 1024 * 1024, // 100MB
-    files: 50 // 最多50个文件
+    fileSize: 30 * 1024 * 1024,
+    files: 80
   }
 })
 
@@ -129,7 +129,7 @@ router.post('/single', upload.single('file'), async (req, res, next) => {
 })
 
 // 批量文件转换
-router.post('/batch', upload.array('files', 50), async (req, res, next) => {
+router.post('/batch', upload.array('files', 80), async (req, res, next) => {
   try {
     if (!req.files || req.files.length === 0) {
       return res.status(400).json({

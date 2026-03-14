@@ -2,10 +2,11 @@ import { defineStore } from 'pinia'
 import { computed, ref } from 'vue'
 import { v4 as uuidv4 } from 'uuid'
 import type { BatchConversion, ConversionOptions, FileTask, HistoryItem } from '../types'
+import { MAX_UPLOAD_FILE_SIZE, MAX_UPLOAD_FILES } from '../constants/upload'
 import { useBrowserConverter } from '../composables/useBrowserConverter'
 import { useServerConverter } from '../composables/useServerConverter'
 import { downloadFiles } from '../utils/fileUtils'
-import { getApiBaseUrl } from '../utils/api'
+import { getApiBaseUrl, toApiUrl } from '../utils/api'
 
 const DEFAULT_OPTIONS: ConversionOptions = {
   quality: 90,
@@ -17,6 +18,7 @@ const DEFAULT_OPTIONS: ConversionOptions = {
 const HISTORY_LIMIT = 50
 const OPTIONS_STORAGE_KEY = 'heic2jpg-conversion-options'
 const HISTORY_STORAGE_KEY = 'heic2jpg-conversion-history'
+const ERROR_THUMBNAIL_URL = '/assets/error.svg'
 
 const normalizeOptionalDimension = (value: unknown): number | undefined => {
   if (value === undefined || value === null || value === '') {
@@ -42,6 +44,8 @@ const sanitizeOptions = (rawOptions?: Partial<ConversionOptions> | null): Conver
   maxHeight: normalizeOptionalDimension(rawOptions?.maxHeight)
 })
 
+const createPreviewUrl = (file: File) => URL.createObjectURL(file)
+
 export const useConversionStore = defineStore('conversion', () => {
   const tasks = ref<FileTask[]>([])
   const activeBatchId = ref<string | null>(null)
@@ -55,7 +59,9 @@ export const useConversionStore = defineStore('conversion', () => {
 
   const totalFiles = computed(() => tasks.value.length)
   const pendingFiles = computed(() => tasks.value.filter((task) => task.status === 'pending').length)
-  const processingFiles = computed(() => tasks.value.filter((task) => task.status === 'processing').length)
+  const processingFiles = computed(() =>
+    tasks.value.filter((task) => task.status === 'processing' || task.status === 'uploading').length
+  )
   const completedFiles = computed(() => tasks.value.filter((task) => task.status === 'completed').length)
   const failedFiles = computed(() => tasks.value.filter((task) => task.status === 'failed').length)
 
@@ -79,11 +85,13 @@ export const useConversionStore = defineStore('conversion', () => {
   const canStartProcessing = computed(() => pendingFiles.value > 0 && !isProcessing.value)
   const canCancelProcessing = computed(() => isProcessing.value || processingFiles.value > 0)
 
-  const revokeResultUrl = (url?: string) => {
+  const revokeObjectUrl = (url?: string) => {
     if (url?.startsWith('blob:')) {
       URL.revokeObjectURL(url)
     }
   }
+
+  const getTask = (taskId: string) => tasks.value.find((task) => task.id === taskId)
 
   const syncBatchSummary = (batchId: string) => {
     const batch = batches.value.find((item) => item.id === batchId)
@@ -99,19 +107,63 @@ export const useConversionStore = defineStore('conversion', () => {
     batch.failedFiles = scopedTasks.filter((task) => task.status === 'failed').length
   }
 
-  const addFiles = (fileList: File[]) => {
-    const newTasks: FileTask[] = fileList.map((file) => ({
-      id: uuidv4(),
-      file,
-      originalName: file.name,
-      originalSize: file.size,
-      originalType: file.type,
-      status: 'pending',
-      progress: 0
-    }))
+  const setTaskThumbnailState = (
+    taskId: string,
+    state: 'idle' | 'loading' | 'ready' | 'error'
+  ) => {
+    const task = getTask(taskId)
+    if (!task) {
+      return
+    }
 
+    task.thumbnailState = state
+
+    if (state === 'error') {
+      revokeObjectUrl(task.thumbnailUrl)
+      task.thumbnailUrl = ERROR_THUMBNAIL_URL
+    }
+  }
+
+  const restoreTaskThumbnail = (task: FileTask) => {
+    if (task.thumbnailUrl === ERROR_THUMBNAIL_URL || task.thumbnailState === 'error') {
+      revokeObjectUrl(task.thumbnailUrl)
+      task.thumbnailUrl = createPreviewUrl(task.file)
+    }
+
+    task.thumbnailState = 'loading'
+  }
+
+  const createTask = (file: File): FileTask => ({
+    id: uuidv4(),
+    file,
+    originalName: file.name,
+    originalSize: file.size,
+    originalType: file.type,
+    status: 'pending',
+    progress: 0,
+    uploadProgress: 0,
+    thumbnailUrl: createPreviewUrl(file),
+    thumbnailState: 'loading'
+  })
+
+  const addFiles = (fileList: File[]) => {
+    if (tasks.value.length + fileList.length > MAX_UPLOAD_FILES) {
+      throw new Error(`最多只能保留 ${MAX_UPLOAD_FILES} 个文件`)
+    }
+
+    const oversizedFile = fileList.find((file) => file.size > MAX_UPLOAD_FILE_SIZE)
+    if (oversizedFile) {
+      throw new Error(`${oversizedFile.name} 超过 30 MB`)
+    }
+
+    const newTasks = fileList.map(createTask)
     tasks.value.push(...newTasks)
     return newTasks.map((task) => task.id)
+  }
+
+  const cleanupTaskResources = (task: FileTask) => {
+    revokeObjectUrl(task.thumbnailUrl)
+    revokeObjectUrl(task.result?.url)
   }
 
   const removeFile = (taskId: string) => {
@@ -121,17 +173,24 @@ export const useConversionStore = defineStore('conversion', () => {
     }
 
     const task = tasks.value[index]
-    if (task) {
-      revokeResultUrl(task.result?.url)
-      tasks.value.splice(index, 1)
+    if (!task) {
+      return
     }
+
+    cleanupTaskResources(task)
+    tasks.value.splice(index, 1)
   }
 
   const clearAllFiles = () => {
-    tasks.value.forEach((task) => revokeResultUrl(task.result?.url))
+    tasks.value.forEach(cleanupTaskResources)
     tasks.value = []
     activeBatchId.value = null
     isProcessing.value = false
+  }
+
+  const clearCompletedFiles = () => {
+    const completedTaskIds = tasks.value.filter((task) => task.status === 'completed').map((task) => task.id)
+    completedTaskIds.forEach(removeFile)
   }
 
   const updateOptions = (newOptions: Partial<ConversionOptions>) => {
@@ -148,6 +207,29 @@ export const useConversionStore = defineStore('conversion', () => {
     return tasks.value.length <= 10 && totalSizeMB <= 100 ? 'browser' : 'server'
   }
 
+  const markTaskFailed = (task: FileTask, error: string) => {
+    task.status = 'failed'
+    task.progress = 0
+    task.uploadProgress = 0
+    task.error = error
+    task.copyableUrl = undefined
+    task.completedAt = new Date()
+    setTaskThumbnailState(task.id, 'error')
+  }
+
+  const resetTaskForRetry = (task: FileTask) => {
+    revokeObjectUrl(task.result?.url)
+    task.status = 'pending'
+    task.progress = 0
+    task.uploadProgress = 0
+    task.error = undefined
+    task.result = undefined
+    task.copyableUrl = undefined
+    task.startedAt = undefined
+    task.completedAt = undefined
+    restoreTaskThumbnail(task)
+  }
+
   const processWithBrowser = async (batchId: string) => {
     const initialized = await browserConverter.initialize()
     if (!initialized) {
@@ -159,9 +241,15 @@ export const useConversionStore = defineStore('conversion', () => {
     for (const task of pendingTasks) {
       task.status = 'processing'
       task.startedAt = new Date()
+      task.progress = Math.max(task.progress, 5)
+      task.uploadProgress = 0
+      task.error = undefined
 
       try {
-        const result = await browserConverter.convert(task.file, options.value)
+        const result = await browserConverter.convert(task.file, options.value, (progress) => {
+          task.progress = Math.max(task.progress, Math.min(progress, 99))
+        })
+
         task.status = 'completed'
         task.progress = 100
         task.completedAt = new Date()
@@ -174,10 +262,9 @@ export const useConversionStore = defineStore('conversion', () => {
           height: result.height,
           format: options.value.outputFormat
         }
+        task.copyableUrl = undefined
       } catch (error) {
-        task.status = 'failed'
-        task.progress = 0
-        task.error = error instanceof Error ? error.message : '浏览器转换失败'
+        markTaskFailed(task, error instanceof Error ? error.message : '浏览器转换失败')
       } finally {
         syncBatchSummary(batchId)
       }
@@ -204,7 +291,7 @@ export const useConversionStore = defineStore('conversion', () => {
         serverInfo.sharp.capabilities?.heicInput || serverInfo.sharp.capabilities?.heifInput || false
 
       if (!heicInputSupported) {
-        const canFallbackToBrowser = pendingTasks.every((task) => task.file.size <= 50 * 1024 * 1024)
+        const canFallbackToBrowser = pendingTasks.every((task) => task.file.size <= MAX_UPLOAD_FILE_SIZE)
 
         if (canFallbackToBrowser) {
           console.warn('服务器端未启用HEIC解码支持，已自动回退到浏览器端处理')
@@ -221,16 +308,31 @@ export const useConversionStore = defineStore('conversion', () => {
     }
 
     pendingTasks.forEach((task) => {
-      task.status = 'processing'
+      task.status = 'uploading'
       task.startedAt = new Date()
       task.progress = 0
+      task.uploadProgress = 0
       task.error = undefined
     })
 
     const response = await serverConverter.convertBatch(
       pendingTasks.map((task) => task.file),
-      options.value
+      options.value,
+      (progress) => {
+        pendingTasks.forEach((task) => {
+          if (task.status === 'uploading') {
+            task.uploadProgress = progress
+            task.progress = Math.min(progress, 95)
+          }
+        })
+      }
     )
+
+    pendingTasks.forEach((task) => {
+      task.status = 'processing'
+      task.uploadProgress = 100
+      task.progress = Math.max(task.progress, 1)
+    })
 
     let completed = false
     while (!completed && isProcessing.value) {
@@ -240,10 +342,14 @@ export const useConversionStore = defineStore('conversion', () => {
       const processedCount = Math.min(progress.processed, pendingTasks.length)
 
       pendingTasks.forEach((task, index) => {
+        if (task.status !== 'processing') {
+          return
+        }
+
         if (index < processedCount) {
           task.progress = 100
-        } else {
-          task.progress = progress.status === 'processing' ? Math.max(task.progress, progress.progress) : task.progress
+        } else if (progress.status === 'processing') {
+          task.progress = Math.max(task.progress, progress.progress)
         }
       })
 
@@ -259,6 +365,7 @@ export const useConversionStore = defineStore('conversion', () => {
       if (result?.status === 'success') {
         task.status = 'completed'
         task.progress = 100
+        task.uploadProgress = 100
         task.completedAt = new Date()
         task.result = {
           url: result.url,
@@ -268,10 +375,9 @@ export const useConversionStore = defineStore('conversion', () => {
           height: result.height,
           format: options.value.outputFormat
         }
+        task.copyableUrl = toApiUrl(result.url)
       } else {
-        task.status = 'failed'
-        task.progress = 0
-        task.error = result?.error || '服务器转换失败'
+        markTaskFailed(task, result?.error || '服务器转换失败')
       }
     })
 
@@ -342,9 +448,8 @@ export const useConversionStore = defineStore('conversion', () => {
       }
     } catch (error) {
       batchTasks.forEach((task) => {
-        if (task.status === 'processing') {
-          task.status = 'failed'
-          task.error = error instanceof Error ? error.message : '批量转换过程中发生错误'
+        if (task.status === 'processing' || task.status === 'uploading') {
+          markTaskFailed(task, error instanceof Error ? error.message : '批量转换过程中发生错误')
         }
       })
     } finally {
@@ -359,9 +464,10 @@ export const useConversionStore = defineStore('conversion', () => {
 
   const cancelConversion = () => {
     tasks.value.forEach((task) => {
-      if (task.status === 'processing' || task.status === 'pending') {
+      if (task.status === 'processing' || task.status === 'pending' || task.status === 'uploading') {
         task.status = 'cancelled'
         task.progress = 0
+        task.uploadProgress = 0
       }
     })
 
@@ -369,14 +475,40 @@ export const useConversionStore = defineStore('conversion', () => {
     isProcessing.value = false
   }
 
+  const cancelTask = (taskId: string) => {
+    const task = getTask(taskId)
+    if (!task || (task.status !== 'processing' && task.status !== 'pending' && task.status !== 'uploading')) {
+      return
+    }
+
+    task.status = 'cancelled'
+    task.progress = 0
+    task.uploadProgress = 0
+  }
+
+  const retryTask = (taskId: string) => {
+    const task = getTask(taskId)
+    if (!task || (task.status !== 'failed' && task.status !== 'cancelled')) {
+      return
+    }
+
+    resetTaskForRetry(task)
+
+    if (!isProcessing.value) {
+      void startConversion()
+    }
+  }
+
   const retryFailedTasks = () => {
     tasks.value.forEach((task) => {
       if (task.status === 'failed' || task.status === 'cancelled') {
-        task.status = 'pending'
-        task.progress = 0
-        task.error = undefined
+        resetTaskForRetry(task)
       }
     })
+
+    if (!isProcessing.value) {
+      void startConversion()
+    }
   }
 
   const loadFromStorage = () => {
@@ -393,6 +525,25 @@ export const useConversionStore = defineStore('conversion', () => {
     } catch (error) {
       console.error('加载存储数据失败:', error)
     }
+  }
+
+  const downloadTask = async (taskId: string) => {
+    const task = getTask(taskId)
+    if (!task?.result?.url) {
+      return
+    }
+
+    if (task.result.blob) {
+      const anchor = document.createElement('a')
+      anchor.href = task.result.url
+      anchor.download = task.result.filename
+      document.body.appendChild(anchor)
+      anchor.click()
+      document.body.removeChild(anchor)
+      return
+    }
+
+    await serverConverter.downloadFile(task.result.url, task.result.filename)
   }
 
   const downloadAllCompleted = async () => {
@@ -440,11 +591,16 @@ export const useConversionStore = defineStore('conversion', () => {
     addFiles,
     removeFile,
     clearAllFiles,
+    clearCompletedFiles,
     updateOptions,
     startConversion,
     cancelConversion,
+    cancelTask,
+    retryTask,
     retryFailedTasks,
     loadFromStorage,
-    downloadAllCompleted
+    downloadTask,
+    downloadAllCompleted,
+    setTaskThumbnailState
   }
 })

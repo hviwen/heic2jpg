@@ -82,6 +82,36 @@ POST /api/auth/logout
 - 会话使用 HTTP-only cookie
 - 匿名用户也可以直接调用转换接口
 
+### Google Auth 配置
+
+后端采用服务端 OAuth 授权码流程，回调地址固定为：
+
+```text
+${BACKEND_URL}/api/auth/google/callback
+```
+
+接入 Google 登录时，请确认：
+- 在 Google Cloud Console 中创建 `Web application` 类型的 OAuth Client
+- `Authorized redirect URIs` 中添加本地或生产回调地址
+- `.env` 中已配置 `GOOGLE_CLIENT_ID`、`GOOGLE_CLIENT_SECRET`、`SESSION_SECRET`
+- `FRONTEND_URL` 和 `CORS_ORIGIN` 指向真实前端地址
+
+开发环境示例：
+
+```bash
+BACKEND_URL=http://localhost:3001
+FRONTEND_URL=http://localhost:5173
+CORS_ORIGIN=http://localhost:5173
+GOOGLE_CLIENT_ID=your-google-client-id
+GOOGLE_CLIENT_SECRET=your-google-client-secret
+SESSION_SECRET=replace-with-a-long-random-string
+```
+
+常见问题：
+- `redirect_uri_mismatch`：Google Console 配置的回调地址与 `BACKEND_URL` 不一致
+- `invalid_state`：浏览器未正确带回 session cookie
+- `/api/auth/google/start` 返回 `503`：未配置 Google OAuth 凭据
+
 ### 单文件转换
 
 ```http
@@ -266,8 +296,6 @@ node --check src/index.js
 ## Docker
 
 项目已提供 [`Dockerfile`](/Users/pan/hankins/native/heic2jpg/backend/Dockerfile)，可直接用于容器部署。
-CMD ["npm", "start"]
-```
 
 ### 环境要求
 

@@ -1,0 +1,3 @@
+export const MAX_UPLOAD_FILES = 80
+export const MAX_UPLOAD_FILE_SIZE = 30 * 1024 * 1024
+export const MAX_UPLOAD_BATCH_SIZE = 500 * 1024 * 1024

@@ -10,6 +10,7 @@ import type {
   SingleConversionResponse
 } from '../types'
 import { getApiBaseUrl, toApiUrl } from '../utils/api'
+import { MAX_UPLOAD_BATCH_SIZE, MAX_UPLOAD_FILE_SIZE, MAX_UPLOAD_FILES } from '../constants/upload'
 
 function normalizeOptionalDimension(value: unknown): string | null {
   if (value === undefined || value === null || value === '') {
@@ -117,6 +118,10 @@ export function useServerConverter() {
       throw new Error('API客户端未初始化')
     }
 
+    if (file.size > MAX_UPLOAD_FILE_SIZE) {
+      throw new Error(`文件大小超过限制 (最大 ${formatFileSize(MAX_UPLOAD_FILE_SIZE)})`)
+    }
+
     // 创建FormData
     const formData = new FormData()
     formData.append('file', file)
@@ -163,22 +168,27 @@ export function useServerConverter() {
   // 批量文件转换
   const convertBatch = async (
     files: File[], 
-    options: ConversionOptions
+    options: ConversionOptions,
+    onUploadProgress?: (progress: number) => void
   ): Promise<BatchConversionResponse> => {
     if (!api.value) {
       throw new Error('API客户端未初始化')
     }
 
     // 验证文件数量
-    if (files.length > 50) {
-      throw new Error('一次最多转换50个文件')
+    if (files.length > MAX_UPLOAD_FILES) {
+      throw new Error(`一次最多转换${MAX_UPLOAD_FILES}个文件`)
+    }
+
+    const oversizedFile = files.find((file) => file.size > MAX_UPLOAD_FILE_SIZE)
+    if (oversizedFile) {
+      throw new Error(`文件 ${oversizedFile.name} 超过 ${formatFileSize(MAX_UPLOAD_FILE_SIZE)}`)
     }
 
     // 验证总文件大小
     const totalSize = files.reduce((sum, file) => sum + file.size, 0)
-    const maxTotalSize = 500 * 1024 * 1024 // 500MB
-    if (totalSize > maxTotalSize) {
-      throw new Error(`总文件大小不能超过 ${formatFileSize(maxTotalSize)}`)
+    if (totalSize > MAX_UPLOAD_BATCH_SIZE) {
+      throw new Error(`总文件大小不能超过 ${formatFileSize(MAX_UPLOAD_BATCH_SIZE)}`)
     }
 
     // 创建FormData
@@ -215,7 +225,7 @@ export function useServerConverter() {
             const progress = progressEvent.total 
               ? Math.round((progressEvent.loaded * 100) / progressEvent.total)
               : 0
-            console.log(`批量上传进度: ${progress}%`)
+            onUploadProgress?.(progress)
           }
         }
       )

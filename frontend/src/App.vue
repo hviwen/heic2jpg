@@ -44,19 +44,19 @@ const themeOverrides = computed<GlobalThemeOverrides>(() => ({
     borderRadiusSmall: '14px',
     fontFamily: '"Manrope", "PingFang SC", "Microsoft YaHei", sans-serif',
     fontFamilyMono: '"IBM Plex Mono", monospace',
-    bodyColor: themeStore.currentTheme === 'dark' ? '#111512' : '#f5f1e8',
-    cardColor: themeStore.currentTheme === 'dark' ? '#171d19' : '#fffdf8',
-    modalColor: themeStore.currentTheme === 'dark' ? '#171d19' : '#fffdf8',
-    popoverColor: themeStore.currentTheme === 'dark' ? '#1b231d' : '#fffdf8',
-    tableColor: themeStore.currentTheme === 'dark' ? '#171d19' : '#fffdf8',
-    textColorBase: themeStore.currentTheme === 'dark' ? '#f2ede2' : '#1d241f',
-    textColor1: themeStore.currentTheme === 'dark' ? '#f2ede2' : '#1d241f',
-    textColor2: themeStore.currentTheme === 'dark' ? '#d0c8b7' : '#465247',
-    textColor3: themeStore.currentTheme === 'dark' ? '#9fad9f' : '#667369',
-    placeholderColor: themeStore.currentTheme === 'dark' ? '#7f8b81' : '#78867b',
-    borderColor: themeStore.currentTheme === 'dark' ? '#2a342d' : '#d9d2c3',
-    dividerColor: themeStore.currentTheme === 'dark' ? '#2a342d' : '#e4ded1',
-    codeColor: themeStore.currentTheme === 'dark' ? '#0f1511' : '#f3eee2'
+    bodyColor: themeStore.currentTheme === 'dark' ? '#111713' : '#edf2e7',
+    cardColor: themeStore.currentTheme === 'dark' ? '#151d17' : '#fafcf7',
+    modalColor: themeStore.currentTheme === 'dark' ? '#151d17' : '#fafcf7',
+    popoverColor: themeStore.currentTheme === 'dark' ? '#19231b' : '#fafcf7',
+    tableColor: themeStore.currentTheme === 'dark' ? '#151d17' : '#fafcf7',
+    textColorBase: themeStore.currentTheme === 'dark' ? '#edf2e7' : '#1b231d',
+    textColor1: themeStore.currentTheme === 'dark' ? '#edf2e7' : '#1b231d',
+    textColor2: themeStore.currentTheme === 'dark' ? '#cdd8cc' : '#455545',
+    textColor3: themeStore.currentTheme === 'dark' ? '#9fb09f' : '#647564',
+    placeholderColor: themeStore.currentTheme === 'dark' ? '#7b8c7d' : '#788878',
+    borderColor: themeStore.currentTheme === 'dark' ? '#27332b' : '#ced8c8',
+    dividerColor: themeStore.currentTheme === 'dark' ? '#27332b' : '#dce5d7',
+    codeColor: themeStore.currentTheme === 'dark' ? '#0f1511' : '#f0f5eb'
   },
   Button: {
     fontWeight: '700'
@@ -87,9 +87,9 @@ onMounted(() => {
     <NDialogProvider>
       <NNotificationProvider>
         <NMessageProvider>
-          <NLayout embedded position="absolute" class="app-shell">
-            <AppHeader />
-            <NLayoutContent content-style="padding: 0;">
+          <NLayout embedded position="absolute" class="app-shell app-theme-transition">
+            <AppHeader class="app-header" />
+            <NLayoutContent content-style="padding: 0;" class="app-content">
               <main class="app-main">
                 <RouterView v-slot="{ Component }">
                   <Transition name="page-shift" mode="out-in">
@@ -98,7 +98,7 @@ onMounted(() => {
                 </RouterView>
               </main>
             </NLayoutContent>
-            <AppFooter />
+            <AppFooter class="app-footer" />
           </NLayout>
         </NMessageProvider>
       </NNotificationProvider>
@@ -109,17 +109,24 @@ onMounted(() => {
 <style scoped>
 .app-shell {
   min-height: 100vh;
-  background:
-    radial-gradient(circle at top left, rgba(201, 163, 92, 0.16), transparent 35%),
-    radial-gradient(circle at top right, rgba(45, 106, 79, 0.15), transparent 28%),
-    linear-gradient(180deg, rgba(255, 253, 248, 0.92), rgba(245, 241, 232, 0.98));
+  background: var(--studio-body);
+  display: flex;
+  flex-direction: column;
 }
 
-:global(.dark) .app-shell {
-  background:
-    radial-gradient(circle at top left, rgba(189, 138, 61, 0.14), transparent 32%),
-    radial-gradient(circle at top right, rgba(45, 106, 79, 0.12), transparent 30%),
-    linear-gradient(180deg, rgba(17, 21, 18, 0.98), rgba(12, 16, 13, 1));
+.app-theme-transition {
+  transition: background 0.3s ease;
+}
+
+.app-header {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+}
+
+.app-content {
+  min-height: calc(100vh - 120px);
+  padding: 0;
 }
 
 .app-main {
