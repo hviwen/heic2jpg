@@ -1,11 +1,11 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { NButton, NCard, NProgress, NTag, NTooltip, useMessage } from 'naive-ui'
-import { LinkIcon } from '@heroicons/vue/24/outline'
+import { ArrowDownTrayIcon, LinkIcon } from '@heroicons/vue/24/outline'
 import { useI18n } from 'vue-i18n'
 import type { FileStatus, FileTask } from '../../types'
 import { useConversionStore } from '../../stores/conversion'
-import { formatFileSize } from '../../utils/fileUtils'
+import { formatFileSize, getOutputExtension } from '../../utils/fileUtils'
 
 const props = defineProps<{
   task: FileTask
@@ -69,6 +69,24 @@ const statusHint = computed(() => {
   return processingTime.value
 })
 
+const previewUrl = computed(() => {
+  if (props.task.status === 'completed' && props.task.result?.url && props.task.thumbnailState !== 'error') {
+    return props.task.result.url
+  }
+
+  return props.task.thumbnailUrl
+})
+
+const resultBadge = computed(() => {
+  if (props.task.status !== 'completed' || !props.task.result) {
+    return null
+  }
+
+  const extension = getOutputExtension(props.task.result.format)
+  const multiplier = props.task.originalSize > 0 ? props.task.result.size / props.task.originalSize : 0
+  return `${extension} · ${multiplier.toFixed(1)}x`
+})
+
 const handleDownload = async () => {
   await conversionStore.downloadTask(props.task.id)
 }
@@ -107,8 +125,8 @@ const handleThumbnailError = () => {
   <NCard embedded :bordered="false" size="small" class="task-card">
     <div class="task-preview">
       <img
-        v-if="task.thumbnailUrl"
-        :src="task.thumbnailUrl"
+        v-if="previewUrl"
+        :src="previewUrl"
         :alt="task.originalName"
         class="task-preview__image"
         @load="handleThumbnailLoad"
@@ -119,6 +137,8 @@ const handleThumbnailError = () => {
       <div v-if="task.status === 'uploading' || task.status === 'processing'" class="task-preview__overlay">
         <div class="task-preview__overlay-label">{{ displayProgress }}%</div>
       </div>
+
+      <div v-else-if="resultBadge" class="task-preview__badge">{{ resultBadge }}</div>
     </div>
 
     <div class="task-body">
@@ -156,7 +176,10 @@ const handleThumbnailError = () => {
       <div v-if="task.error" class="task-error" :title="task.error">{{ task.error }}</div>
 
       <div v-if="showActions !== false" class="task-actions">
-        <NButton v-if="canDownload" size="tiny" secondary type="success" @click="handleDownload">
+        <NButton v-if="canDownload" size="tiny" strong type="success" @click="handleDownload">
+          <template #icon>
+            <ArrowDownTrayIcon class="h-3.5 w-3.5" />
+          </template>
           {{ t('common.download') }}
         </NButton>
 
@@ -204,6 +227,7 @@ const handleThumbnailError = () => {
   border-radius: 24px;
   border: 1px solid var(--studio-line);
   padding: 12px;
+  height: 272px;
 }
 
 .task-card::before {
@@ -243,8 +267,8 @@ const handleThumbnailError = () => {
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 100px;
-  height: 100px;
+  width: 116px;
+  height: 116px;
   margin: 0 auto;
   overflow: hidden;
   border-radius: 20px;
@@ -286,10 +310,24 @@ const handleThumbnailError = () => {
   font-weight: 800;
 }
 
+.task-preview__badge {
+  position: absolute;
+  right: 8px;
+  bottom: 8px;
+  padding: 4px 8px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--studio-ink) 82%, transparent);
+  color: white;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+}
+
 .task-body {
   margin-top: 12px;
   display: grid;
   gap: 10px;
+  height: calc(100% - 128px);
 }
 
 @keyframes task-card-glow-spin {
@@ -354,6 +392,7 @@ const handleThumbnailError = () => {
 
 .task-actions {
   flex-wrap: wrap;
+  margin-top: auto;
 }
 
 .task-action-disabled {

@@ -5,12 +5,12 @@ import type { BatchConversion, ConversionOptions, FileTask, HistoryItem } from '
 import { MAX_UPLOAD_FILE_SIZE, MAX_UPLOAD_FILES } from '../constants/upload'
 import { useBrowserConverter } from '../composables/useBrowserConverter'
 import { useServerConverter } from '../composables/useServerConverter'
-import { downloadFiles } from '../utils/fileUtils'
+import { downloadFiles, getConvertedFilename } from '../utils/fileUtils'
 import { getApiBaseUrl, toApiUrl } from '../utils/api'
 
 const DEFAULT_OPTIONS: ConversionOptions = {
-  quality: 90,
-  keepMetadata: true,
+  quality: 82,
+  keepMetadata: false,
   outputFormat: 'jpeg',
   conversionMode: 'auto'
 }
@@ -256,7 +256,7 @@ export const useConversionStore = defineStore('conversion', () => {
         task.result = {
           blob: result.blob,
           url: URL.createObjectURL(result.blob),
-          filename: `${task.originalName.replace(/\.[^/.]+$/, '')}.${options.value.outputFormat}`,
+          filename: getConvertedFilename(task.originalName, options.value.outputFormat),
           size: result.blob.size,
           width: result.width,
           height: result.height,
@@ -369,7 +369,7 @@ export const useConversionStore = defineStore('conversion', () => {
         task.completedAt = new Date()
         task.result = {
           url: result.url,
-          filename: result.convertedName,
+          filename: getConvertedFilename(task.originalName, options.value.outputFormat),
           size: result.size,
           width: result.width,
           height: result.height,

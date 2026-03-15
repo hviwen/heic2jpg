@@ -208,7 +208,7 @@ const handleFilesSelected = (files: File[]) => {
 
 @media (min-width: 1100px) {
   .workspace-shell {
-    grid-template-columns: minmax(0, 1.48fr) minmax(320px, 0.82fr);
+    grid-template-columns: minmax(0, 1.72fr) minmax(280px, 0.68fr);
   }
 
   .workspace-sidebar__sticky {

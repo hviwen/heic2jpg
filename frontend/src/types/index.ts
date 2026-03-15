@@ -131,6 +131,7 @@ export interface SingleConversionResponse {
   }
   converted: {
     filename: string
+    downloadName?: string
     size: number
     url: string
     downloadUrl: string
@@ -172,6 +173,7 @@ export interface BatchResults {
   results: Array<{
     originalName: string
     convertedName: string
+    downloadName?: string
     status: 'success' | 'failed'
     size: number
     url: string

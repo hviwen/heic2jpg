@@ -24,7 +24,7 @@ const languageOptions = computed(() => [
 ])
 
 const formatOptions = [
-  { label: 'JPEG', value: 'jpeg' },
+  { label: 'JPG', value: 'jpeg' },
   { label: 'PNG', value: 'png' },
   { label: 'WebP', value: 'webp' }
 ]

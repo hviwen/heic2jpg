@@ -4,7 +4,7 @@ import { NButton, NCard, NEmpty } from 'naive-ui'
 import { useI18n } from 'vue-i18n'
 import { useConversionStore } from '../../stores/conversion'
 import TaskItem from './TaskItem.vue'
-import type { FileStatus, FileTask } from '../../types'
+import type { FileStatus } from '../../types'
 
 const conversionStore = useConversionStore()
 const { t } = useI18n()
@@ -22,31 +22,16 @@ const sortedTasks = computed(() => {
   return [...conversionStore.tasks].sort((a, b) => order[a.status] - order[b.status])
 })
 
-const groupedTasks = computed(() => {
-  const groups: Record<'uploading' | 'processing' | 'pending' | 'completed' | 'failed' | 'cancelled', FileTask[]> = {
-    uploading: [],
-    processing: [],
-    pending: [],
-    completed: [],
-    failed: [],
-    cancelled: []
-  }
-
-  sortedTasks.value.forEach((task) => {
-    groups[task.status].push(task)
-  })
-
-  return groups
-})
-
-const sections = computed(() => [
-  { key: 'uploading', label: t('common.uploading'), tasks: groupedTasks.value.uploading },
-  { key: 'processing', label: t('common.processing'), tasks: groupedTasks.value.processing },
-  { key: 'pending', label: t('common.pending'), tasks: groupedTasks.value.pending },
-  { key: 'completed', label: t('common.completed'), tasks: groupedTasks.value.completed },
-  { key: 'failed', label: t('common.failed'), tasks: groupedTasks.value.failed },
-  { key: 'cancelled', label: t('common.cancel'), tasks: groupedTasks.value.cancelled }
-])
+const statusSummary = computed(() =>
+  [
+    { key: 'uploading', label: t('common.uploading'), count: conversionStore.tasks.filter((task) => task.status === 'uploading').length },
+    { key: 'processing', label: t('common.processing'), count: conversionStore.tasks.filter((task) => task.status === 'processing').length },
+    { key: 'pending', label: t('common.pending'), count: conversionStore.tasks.filter((task) => task.status === 'pending').length },
+    { key: 'completed', label: t('common.completed'), count: conversionStore.tasks.filter((task) => task.status === 'completed').length },
+    { key: 'failed', label: t('common.failed'), count: conversionStore.tasks.filter((task) => task.status === 'failed').length },
+    { key: 'cancelled', label: t('common.cancel'), count: conversionStore.tasks.filter((task) => task.status === 'cancelled').length }
+  ].filter((item) => item.count > 0)
+)
 </script>
 
 <template>
@@ -87,21 +72,23 @@ const sections = computed(() => [
       <NEmpty :description="t('home.emptyWorkspace')" />
     </div>
 
-    <div v-else class="list-scroll">
-      <section v-for="section in sections" v-show="section.tasks.length > 0" :key="section.key" class="list-section">
-        <div class="section-header">
-          <h3 class="section-title">{{ section.label }}</h3>
-          <span class="section-count">{{ section.tasks.length }}</span>
+    <div v-else>
+      <div v-if="statusSummary.length > 0" class="status-row">
+        <div v-for="item in statusSummary" :key="item.key" class="status-chip">
+          <span class="status-chip__label">{{ item.label }}</span>
+          <span class="status-chip__count">{{ item.count }}</span>
         </div>
+      </div>
 
+      <div class="list-scroll">
         <div class="task-grid">
           <TaskItem
-            v-for="task in section.tasks"
+            v-for="task in sortedTasks"
             :key="task.id"
             :task="task"
           />
         </div>
-      </section>
+      </div>
     </div>
   </NCard>
 </template>
@@ -138,46 +125,57 @@ const sections = computed(() => [
   padding: 48px 0 28px;
 }
 
+.status-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 18px;
+}
+
+.status-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--studio-card) 86%, transparent);
+  border: 1px solid color-mix(in srgb, var(--studio-line) 92%, transparent);
+}
+
+.status-chip__label {
+  color: var(--studio-muted);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.status-chip__count {
+  font-size: 12px;
+  font-weight: 800;
+}
+
 .list-scroll {
-  margin-top: 20px;
-  max-height: calc(6 * 190px + 5 * 18px);
+  margin-top: 18px;
+  max-height: calc(3 * 272px + 2 * 14px);
   overflow-y: auto;
   padding-right: 6px;
 }
 
-.list-section + .list-section {
-  margin-top: 22px;
-}
-
-.section-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  margin-bottom: 12px;
-}
-
-.section-title,
-.section-count {
-  white-space: nowrap;
-  color: var(--studio-muted);
-}
-
-.section-title {
-  font-size: 12px;
-  font-weight: 800;
-  letter-spacing: 0.18em;
-  text-transform: uppercase;
-}
-
-.section-count {
-  font-size: 12px;
-}
-
 .task-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(156px, 1fr));
+  grid-template-columns: repeat(5, minmax(0, 1fr));
   gap: 14px;
+}
+
+@media (max-width: 1280px) {
+  .task-grid {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 1080px) {
+  .task-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
 }
 
 @media (max-width: 768px) {
@@ -186,7 +184,7 @@ const sections = computed(() => [
   }
 
   .task-grid {
-    grid-template-columns: repeat(auto-fill, minmax(142px, 1fr));
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
   .list-scroll {

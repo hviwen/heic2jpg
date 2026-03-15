@@ -8,6 +8,166 @@ import { createBatch, updateBatch } from './batchStore.js'
 // 增强sharp以支持HEIC（如果系统安装了libheif）
 sharp.concurrency(2) // 限制并发数，避免内存溢出
 
+const DEFAULT_QUALITY = 82
+const MIN_OUTPUT_BYTES = 64 * 1024
+
+function normalizeOutputFormat(format = 'jpeg') {
+  const normalized = String(format).toLowerCase()
+
+  if (normalized === 'jpg' || normalized === 'jpeg') {
+    return 'jpeg'
+  }
+
+  if (normalized === 'png' || normalized === 'webp') {
+    return normalized
+  }
+
+  return 'jpeg'
+}
+
+function getOutputExtension(format) {
+  return normalizeOutputFormat(format) === 'jpeg' ? 'jpg' : normalizeOutputFormat(format)
+}
+
+function getDownloadFilename(originalName, format) {
+  const baseName = originalName.replace(/\.[^.]+$/, '')
+  const extension = getOutputExtension(format).toUpperCase()
+  return `${baseName}.${extension}`
+}
+
+function clampQuality(quality) {
+  const numericQuality = Number.parseInt(quality, 10)
+  if (Number.isNaN(numericQuality)) {
+    return DEFAULT_QUALITY
+  }
+
+  return Math.min(Math.max(numericQuality, 1), 100)
+}
+
+function getTargetDimensions(metadata, options, scale = 1) {
+  const originalWidth = metadata.width
+  const originalHeight = metadata.height
+
+  if (!originalWidth || !originalHeight) {
+    return {
+      width: options.maxWidth,
+      height: options.maxHeight
+    }
+  }
+
+  let width = originalWidth
+  let height = originalHeight
+  const hasUserBounds = Boolean(options.maxWidth || options.maxHeight)
+
+  if (hasUserBounds) {
+    const widthRatio = options.maxWidth ? options.maxWidth / width : Number.POSITIVE_INFINITY
+    const heightRatio = options.maxHeight ? options.maxHeight / height : Number.POSITIVE_INFINITY
+    const resizeRatio = Math.min(widthRatio, heightRatio, 1)
+    width = Math.max(1, Math.round(width * resizeRatio))
+    height = Math.max(1, Math.round(height * resizeRatio))
+  }
+
+  if (scale < 1) {
+    width = Math.max(1, Math.round(width * scale))
+    height = Math.max(1, Math.round(height * scale))
+  }
+
+  return { width, height }
+}
+
+function createPipeline(inputPath, options, metadata, scale = 1) {
+  let pipeline = sharp(inputPath).rotate()
+
+  if (options.keepMetadata) {
+    pipeline = pipeline.withMetadata()
+  }
+
+  const dimensions = getTargetDimensions(metadata, options, scale)
+
+  if (dimensions.width || dimensions.height) {
+    pipeline = pipeline.resize({
+      width: dimensions.width,
+      height: dimensions.height,
+      fit: 'inside',
+      withoutEnlargement: true
+    })
+  }
+
+  return pipeline
+}
+
+async function renderBuffer(inputPath, options, metadata, format, quality, scale = 1) {
+  const pipeline = createPipeline(inputPath, options, metadata, scale)
+
+  if (format === 'png') {
+    return pipeline
+      .png({
+        compressionLevel: 9,
+        palette: true,
+        effort: 10
+      })
+      .toBuffer()
+  }
+
+  if (format === 'webp') {
+    return pipeline
+      .webp({
+        quality,
+        effort: 6
+      })
+      .toBuffer()
+  }
+
+  return pipeline
+    .jpeg({
+      quality,
+      mozjpeg: true,
+      progressive: true,
+      chromaSubsampling: '4:2:0'
+    })
+    .toBuffer()
+}
+
+async function convertWithinSizeBudget(file, options) {
+  const outputFormat = normalizeOutputFormat(options.outputFormat)
+  const quality = clampQuality(options.quality)
+  const originalMetadata = await sharp(file.path).metadata()
+  const maxOutputSize = Math.max(file.size * 2, MIN_OUTPUT_BYTES)
+  const qualityStops =
+    outputFormat === 'png'
+      ? [quality]
+      : Array.from(new Set([quality, Math.min(quality, 76), 68, 60, 52, 44].filter(Boolean)))
+  const scaleStops = [1, 0.94, 0.88, 0.82, 0.76, 0.7, 0.62, 0.54, 0.46]
+
+  let bestBuffer = null
+  let bestMetadata = null
+
+  for (const scale of scaleStops) {
+    for (const qualityStop of qualityStops) {
+      const buffer = await renderBuffer(file.path, options, originalMetadata, outputFormat, qualityStop, scale)
+
+      if (!bestBuffer || buffer.byteLength < bestBuffer.byteLength) {
+        bestBuffer = buffer
+        bestMetadata = await sharp(buffer).metadata()
+      }
+
+      if (buffer.byteLength <= maxOutputSize) {
+        return {
+          buffer,
+          metadata: await sharp(buffer).metadata(),
+          format: outputFormat
+        }
+      }
+    }
+  }
+
+  return {
+    buffer: bestBuffer,
+    metadata: bestMetadata,
+    format: outputFormat
+  }
+}
+
 /**
  * 转换单个HEIC/HEIF文件为JPEG
  * @param {Object} file - Multer文件对象
@@ -21,54 +181,19 @@ export async function convertSingleFile(file, options) {
     console.log(`开始转换文件: ${file.originalname}`)
     
     // 生成输出文件名
-    const outputFilename = `${uuidv4()}.${options.outputFormat || 'jpeg'}`
+    const outputFormat = normalizeOutputFormat(options.outputFormat)
+    const outputFilename = `${uuidv4()}.${getOutputExtension(outputFormat)}`
     const outputPath = path.join(setupUploadDir(), outputFilename)
     const enoughSpace = await hasEnoughSpace(path.dirname(outputPath), file.size)
     if (!enoughSpace) {
       throw new Error('磁盘空间不足')
     }
-    
-    // 构建sharp转换管道
-    let pipeline = sharp(file.path)
-    
-    // 保留元数据
-    if (options.keepMetadata) {
-      pipeline = pipeline.withMetadata()
-    }
-    
-    // 调整尺寸（如果需要）
-    if (options.maxWidth || options.maxHeight) {
-      pipeline = pipeline.resize({
-        width: options.maxWidth,
-        height: options.maxHeight,
-        fit: 'inside',
-        withoutEnlargement: true
-      })
-    }
-    
-    // 设置输出格式和质量
-    const quality = Math.min(Math.max(options.quality || 90, 1), 100)
-    
-    // 执行转换
-    const outputFormat = options.outputFormat || 'jpeg'
-
-    if (outputFormat === 'png') {
-      await pipeline.png({ compressionLevel: 9, palette: false }).toFile(outputPath)
-    } else if (outputFormat === 'webp') {
-      await pipeline.webp({ quality }).toFile(outputPath)
-    } else {
-      await pipeline
-        .jpeg({
-          quality,
-          mozjpeg: true,
-          chromaSubsampling: '4:4:4'
-        })
-        .toFile(outputPath)
-    }
+    const resultBuffer = await convertWithinSizeBudget(file, options)
+    await fs.writeFile(outputPath, resultBuffer.buffer)
     
     // 获取转换后的文件信息
     const outputStats = await fs.stat(outputPath)
-    const metadata = await sharp(outputPath).metadata()
+    const metadata = resultBuffer.metadata || (await sharp(outputPath).metadata())
     
     const conversionTime = Date.now() - startTime
     
@@ -76,6 +201,7 @@ export async function convertSingleFile(file, options) {
     
     return {
       filename: outputFilename,
+      downloadName: getDownloadFilename(file.originalname, outputFormat),
       path: outputPath,
       size: outputStats.size,
       format: metadata.format,
@@ -122,6 +248,7 @@ export async function convertBatchFiles(batchId, files, options) {
         const successResult = {
           originalName: file.originalname,
           convertedName: path.basename(result.filename),
+          downloadName: result.downloadName,
           status: 'success',
           size: result.size,
           url: `/api/convert/download/${result.filename}`,

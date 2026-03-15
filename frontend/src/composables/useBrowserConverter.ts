@@ -2,6 +2,7 @@ import { ref } from 'vue'
 import type { ConversionOptions, BrowserConversionResult, OutputFormat } from '../types'
 import { createConversionWorker } from '../workers/conversion.worker'
 import { MAX_UPLOAD_FILE_SIZE } from '../constants/upload'
+import { getConvertedFilename } from '../utils/fileUtils'
 
 type WorkerConversionOptions = {
   quality: number
@@ -9,6 +10,7 @@ type WorkerConversionOptions = {
   outputFormat: OutputFormat
   maxWidth?: number
   maxHeight?: number
+  originalSize?: number
 }
 
 export function useBrowserConverter() {
@@ -94,7 +96,8 @@ export function useBrowserConverter() {
         keepMetadata: options.keepMetadata,
         outputFormat: options.outputFormat,
         maxWidth: options.maxWidth,
-        maxHeight: options.maxHeight
+        maxHeight: options.maxHeight,
+        originalSize: file.size
       }
 
       // 设置超时
@@ -123,8 +126,8 @@ export function useBrowserConverter() {
             activeConversions.value.delete(conversionId)
 
             // 将Blob转换为File对象
-            const resultFile = new File([data.blob], 
-              getOutputFilename(file.name, options.outputFormat), 
+            const resultFile = new File([data.blob],
+              getConvertedFilename(file.name, options.outputFormat),
               { type: `image/${options.outputFormat}` }
             )
 
@@ -337,11 +340,4 @@ function formatFileSize(bytes: number): string {
   const i = Math.floor(Math.log(bytes) / Math.log(k))
   
   return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i]
-}
-
-// 生成输出文件名
-function getOutputFilename(originalName: string, format: OutputFormat): string {
-  const nameWithoutExt = originalName.replace(/\.[^.]+$/, '')
-  const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19)
-  return `${nameWithoutExt}_converted_${timestamp}.${format}`
 }

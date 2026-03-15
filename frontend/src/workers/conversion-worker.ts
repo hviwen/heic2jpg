@@ -23,6 +23,7 @@ interface ConvertMessageData {
     maxWidth?: number
     maxHeight?: number
     keepMetadata?: boolean
+    originalSize?: number
   }
   conversionId: string
 }
@@ -208,6 +209,17 @@ function resizeImage(
   return destCtx.getImageData(0, 0, width, height)
 }
 
+function resizeImageByScale(imageData: ImageData, scale: number): ImageData {
+  const nextWidth = Math.max(1, Math.round(imageData.width * scale))
+  const nextHeight = Math.max(1, Math.round(imageData.height * scale))
+
+  if (nextWidth === imageData.width && nextHeight === imageData.height) {
+    return imageData
+  }
+
+  return resizeImage(imageData, nextWidth, nextHeight)
+}
+
 // 编码图像为指定格式
 async function encodeImage(
   imageData: ImageData,
@@ -226,28 +238,28 @@ async function encodeImage(
   
   // 根据格式确定MIME类型和质量参数
   let mimeType: string
-  let options: any
+  let encodeOptions: { type: string; quality?: number }
   
   switch (format) {
     case 'jpeg':
       mimeType = 'image/jpeg'
-      options = { quality: quality / 100 }
+      encodeOptions = { type: mimeType, quality: quality / 100 }
       break
     case 'png':
       mimeType = 'image/png'
-      options = {} // PNG不支持质量参数
+      encodeOptions = { type: mimeType }
       break
     case 'webp':
       mimeType = 'image/webp'
-      options = { quality: quality / 100 }
+      encodeOptions = { type: mimeType, quality: quality / 100 }
       break
     default:
       mimeType = 'image/jpeg'
-      options = { quality: quality / 100 }
+      encodeOptions = { type: mimeType, quality: quality / 100 }
   }
   
   // 转换为Blob
-  const blob = await canvas.convertToBlob(options)
+  const blob = await canvas.convertToBlob(encodeOptions)
   
   // 验证Blob
   if (!blob || blob.size === 0) {
@@ -255,6 +267,46 @@ async function encodeImage(
   }
   
   return blob
+}
+
+async function encodeWithinSizeBudget(
+  sourceImageData: ImageData,
+  format: 'jpeg' | 'png' | 'webp',
+  quality: number,
+  originalSize?: number
+): Promise<{ blob: Blob; imageData: ImageData }> {
+  const maxOutputSize = originalSize ? Math.max(originalSize * 2, 64 * 1024) : Number.POSITIVE_INFINITY
+  const qualityStops =
+    format === 'png'
+      ? [100]
+      : Array.from(new Set([quality, Math.min(quality, 76), 68, 60, 52, 44].filter((value) => value > 0)))
+  const scaleStops = [1, 0.94, 0.88, 0.82, 0.76, 0.7, 0.62, 0.54, 0.46]
+
+  let fallbackBlob: Blob | null = null
+  let fallbackImageData = sourceImageData
+
+  for (const scale of scaleStops) {
+    const scaledImage = scale === 1 ? sourceImageData : resizeImageByScale(sourceImageData, scale)
+
+    for (const qualityStop of qualityStops) {
+      const blob = await encodeImage(scaledImage, format, qualityStop)
+
+      if (!fallbackBlob || blob.size < fallbackBlob.size) {
+        fallbackBlob = blob
+        fallbackImageData = scaledImage
+      }
+
+      if (blob.size <= maxOutputSize) {
+        return { blob, imageData: scaledImage }
+      }
+    }
+  }
+
+  if (!fallbackBlob) {
+    throw new Error('图像编码失败')
+  }
+
+  return { blob: fallbackBlob, imageData: fallbackImageData }
 }
 
 // 处理转换请求
@@ -290,14 +342,19 @@ async function handleConvert(data: ConvertMessageData) {
     sendProgress(70, conversionId)
     
     // 编码为指定格式
-    const blob = await encodeImage(resizedImageData, options.outputFormat, options.quality)
+    const encoded = await encodeWithinSizeBudget(
+      resizedImageData,
+      options.outputFormat,
+      options.quality,
+      options.originalSize
+    )
     sendProgress(90, conversionId)
     
     // 计算转换时间
     const conversionTime = performance.now() - startTime
     
     // 发送完成消息
-    sendComplete(blob, resizedImageData.width, resizedImageData.height, conversionTime, conversionId)
+    sendComplete(encoded.blob, encoded.imageData.width, encoded.imageData.height, conversionTime, conversionId)
     
   } catch (error) {
     console.error('转换失败:', error)

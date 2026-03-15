@@ -28,16 +28,16 @@ const modeOptions = computed(() => [
 ])
 
 const formatOptions = [
-  { value: 'jpeg', label: 'JPEG' },
+  { value: 'jpeg', label: 'JPG' },
   { value: 'png', label: 'PNG' },
   { value: 'webp', label: 'WebP' }
 ] as const
 
 const qualityStops = {
-  60: '60',
-  80: '80',
-  90: '90',
-  95: '95'
+  52: '52',
+  68: '68',
+  82: '82',
+  90: '90'
 }
 
 function updateOptions(updates: Partial<ConversionOptions>) {
@@ -47,8 +47,8 @@ function updateOptions(updates: Partial<ConversionOptions>) {
 
 function resetToDefaults() {
   const defaults: ConversionOptions = {
-    quality: 90,
-    keepMetadata: true,
+    quality: 82,
+    keepMetadata: false,
     outputFormat: 'jpeg',
     conversionMode: 'auto',
     maxWidth: undefined,

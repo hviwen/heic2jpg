@@ -26,6 +26,20 @@ export function getFileExtension(filename: string): string {
   return filename.substring(filename.lastIndexOf('.')).toLowerCase()
 }
 
+export function getOutputExtension(format: 'jpeg' | 'png' | 'webp'): string {
+  if (format === 'jpeg') {
+    return 'JPG'
+  }
+
+  return format.toUpperCase()
+}
+
+export function getConvertedFilename(originalName: string, format: 'jpeg' | 'png' | 'webp'): string {
+  const extension = getOutputExtension(format)
+  const nameWithoutExt = originalName.replace(/\.[^.]+$/, '')
+  return `${nameWithoutExt}.${extension}`
+}
+
 /**
  * 检查文件是否是HEIC/HEIF格式
  * @param file 文件对象

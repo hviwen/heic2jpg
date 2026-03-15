@@ -80,8 +80,8 @@ router.post('/single', upload.single('file'), async (req, res, next) => {
 
     // 获取转换选项
     const options = {
-      quality: parseInt(req.body.quality, 10) || 90,
-      keepMetadata: req.body.keepMetadata !== 'false',
+      quality: parseInt(req.body.quality, 10) || 82,
+      keepMetadata: req.body.keepMetadata === 'true',
       outputFormat: req.body.outputFormat || 'jpeg',
       maxWidth: parseOptionalInteger(req.body.maxWidth),
       maxHeight: parseOptionalInteger(req.body.maxHeight)
@@ -105,6 +105,7 @@ router.post('/single', upload.single('file'), async (req, res, next) => {
         },
         converted: {
           filename: result.filename,
+          downloadName: result.downloadName,
           size: result.size,
           url: `/api/convert/download/${result.filename}`,
           downloadUrl: `/api/convert/download/${result.filename}`,
@@ -143,8 +144,8 @@ router.post('/batch', upload.array('files', 80), async (req, res, next) => {
 
     // 获取转换选项
     const options = {
-      quality: parseInt(req.body.quality, 10) || 90,
-      keepMetadata: req.body.keepMetadata !== 'false',
+      quality: parseInt(req.body.quality, 10) || 82,
+      keepMetadata: req.body.keepMetadata === 'true',
       outputFormat: req.body.outputFormat || 'jpeg',
       maxWidth: parseOptionalInteger(req.body.maxWidth),
       maxHeight: parseOptionalInteger(req.body.maxHeight)
