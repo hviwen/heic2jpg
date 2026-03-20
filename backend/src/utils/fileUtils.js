@@ -5,10 +5,19 @@ import { fileURLToPath } from 'url'
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
+const BACKEND_ROOT = path.resolve(__dirname, '../..')
 
 // 上传目录路径
-const UPLOAD_DIR = path.join(__dirname, '../../uploads')
-const TEMP_DIR = path.join(__dirname, '../../temp')
+const UPLOAD_DIR = path.resolve(BACKEND_ROOT, process.env.UPLOAD_DIR || './uploads')
+const TEMP_DIR = path.resolve(BACKEND_ROOT, process.env.TEMP_DIR || './temp')
+
+export function getUploadDir() {
+  return UPLOAD_DIR
+}
+
+export function getTempDir() {
+  return TEMP_DIR
+}
 
 /**
  * 设置上传目录，确保目录存在

@@ -1,18 +1,12 @@
 import express from 'express'
 import cors from 'cors'
-import { fileURLToPath } from 'url'
-import { dirname, join } from 'path'
 import authRoutes from './routes/auth.js'
 import conversionRoutes from './routes/conversion.js'
 import healthRoutes from './routes/health.js'
 import errorHandler from './middleware/errorHandler.js'
 import { sessionMiddleware } from './middleware/session.js'
-import { cleanupOldFiles, setupUploadDir } from './utils/fileUtils.js'
+import { cleanupOldFiles, getTempDir, getUploadDir, setupUploadDir } from './utils/fileUtils.js'
 import { getDatabasePath } from './services/database.js'
-
-// ES模块的 __dirname 替代方案
-const __filename = fileURLToPath(import.meta.url)
-const __dirname = dirname(__filename)
 
 const app = express()
 const PORT = process.env.PORT || 3001
@@ -22,8 +16,8 @@ const corsOrigins = (process.env.CORS_ORIGIN || 'http://localhost:5173')
   .map(origin => origin.trim())
   .filter(Boolean)
 const allowCredentials = process.env.CORS_CREDENTIALS !== 'false'
-const uploadsDir = join(__dirname, '../uploads')
-const tempDir = join(__dirname, '../temp')
+const uploadsDir = getUploadDir()
+const tempDir = getTempDir()
 const shouldCleanupOldFiles = process.env.CLEANUP_OLD_FILES !== 'false'
 const fileRetentionHours = Number.parseInt(process.env.FILE_RETENTION_HOURS || '24', 10)
 const cleanupIntervalHours = Number.parseInt(process.env.CLEANUP_INTERVAL_HOURS || '1', 10)
